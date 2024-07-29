@@ -1,0 +1,338 @@
+#+title: Extra config
+
+* General
+** Doom doctor recommendations
+#+begin_src elisp
+(setq shell-file-name (executable-find "bash")) ;; emacs
+(setq-default vterm-shell (executable-find "fish")) ;; vterm
+#+end_src
+
+** More line spacing
+#+begin_src elisp
+(setq line-spacing 2)
+#+end_src
+** Always show perspectives in minibuffer
+#+begin_src elisp
+(after! persp-mode
+  (defun display-workspaces-in-minibuffer ()
+    (with-current-buffer " *Minibuf-0*"
+      (erase-buffer)
+      (insert (+workspace--tabline))))
+  (run-with-idle-timer 1 t #'display-workspaces-in-minibuffer)
+  (+workspace/display))
+#+end_src
+* Convenience
+** Global keybindings, regardless of mode
+#+begin_src elisp
+;; keybindings
+(map!
+ "C-c o" #'lsp-ui-doc-glance
+ "C-c i" #'lsp-ui-imenu
+ "C-c t" #'lsp-ui-imenu--refresh
+ "s-[" #'winner-undo
+ "s-]" #'winner-redo
+ "M-s-<left>" #'winner-undo
+ "M-s-<right>" #'winner-redo)
+#+end_src
+** Normal mode keybindings
+Convenience macro to allow for multiply normal mode maps in a row
+#+begin_src elisp
+(defmacro normal-map! (&rest args)
+  "ALIST of form (keybinding . func)"
+  (let (value)
+    (append (list 'map!) (dolist (arg args value)
+                           (setq value (append `(:n ,(car arg) ,(cdr arg)) value))))))
+#+end_src
+
+Function to highlight everything on this line and jump to the matching end brace
+#+begin_src elisp
+;; visual mode select block
+(defun visual-select-block ()
+  (interactive)
+  (evil-visual-line)
+  (evil-end-of-line)
+  (evil-jump-item))
+#+end_src
+
+#+begin_src elisp
+;; normal mode maps
+(normal-map!
+ ("SPC v" . #'visual-select-block)
+ ("SPC p ~" . #'project-dired)
+ ("SPC o c" . #'cfw:open-org-calendar)
+ ("] e" . #'flycheck-next-error)
+ ("[ e" . #'flycheck-previous-error)
+ ("SPC c p" . #'flycheck-projectile-list-errors)
+ ("SPC b Y" . #'centaur-tabs--copy-file-name-to-clipboard)
+ ("SPC f n" . #'treemacs-create-file))
+#+end_src
+
+#+RESULTS:
+
+** Popper
+[[https://github.com/karthink/popper][reference]]
+
+#+begin_src elisp
+(use-package! popper
+  :bind (("C-`" . popper-toggle)
+         ("s-." . popper-cycle)
+         ("C-<escape>" . popper-kill-latest-popup))
+  :init ;; set certain buffers to be automatically popups
+  (setq popper-reference-buffers
+        '("\\*Ibuffer\\*"
+          "\\*Messages\\*"
+          "\\*info\\*"
+          "\\*helpful.*"
+          vterm-mode))
+  :config
+  (popper-mode +1))
+#+end_src
+
+Custom function to group popups based on workspace
+#+begin_src elisp
+(defun popper-group-by-workspace ()
+  (+workspace-current-name))
+
+(setq popper-group-function #'popper-group-by-workspace)
+#+end_src
+* Org
+
+** Variables
+Used later on so have to be defined now
+#+begin_src elisp
+(setq +org-capture-baby-file "baby.org"
+      +org-chores-file "~/org/chores.org")
+#+end_src
+
+The doom TODO statuses are suuuuper overtuned -- let's fix them
+Also, going to make it so that they will work better with ~org-super-agenda-mode~
+
+[[https://orgmode.org/manual/TODO-Extensions.html][org-todo-keywords reference]]
+[[https://orgmode.org/manual/Tracking-TODO-state-changes.html][org-keywords special characters]]
+
+#+begin_src elisp
+(setq my/org-todo-keywords '(
+                             ("TODO(t)" . org-todo)
+                             ("NEXT(n)" .  (:foreground "#34ebd8" :weight bold :slant italic))
+                             ("PROG(p!)" . +org-todo-active)
+                             ("HOLD(h@)" . (:background "orange" :foreground "white")) ; in progress but held up
+                             "|"
+                             ("DONE(d!)" . org-done)
+                             ("WONT(w@/!)" . +org-todo-cancel)))
+
+
+;; have to set it after org loads
+(after! org
+  ;; keywords are the keys of the alist of ~my/org-todo-keywords~
+  (setq org-todo-keywords (list (append '(sequence)
+                                        (seq-map #'(lambda (elt)
+                                                     (if (listp elt)
+                                                         (car elt)
+                                                       elt))
+                                                 my/org-todo-keywords))))
+
+  (setq org-todo-keyword-faces (let ((f (lambda (elt)
+                                         (if (listp elt)
+                                             `(
+                                              ,(seq-take-while #'(lambda (elt) (not (equal ?\( elt))) (car elt))
+                                              .
+                                              ,(cdr elt))
+                                           elt)
+                                         )))
+                                 (seq-map #'(lambda (elt) (funcall f elt)) my/org-todo-keywords)))
+)
+#+end_src
+** Open org agenda in a popup buffer window
+
+I wrote this function myself! Super proud
+#+begin_src elisp
+(defun org-agenda-popup ()
+  (interactive)
+  (let ((buf (get-buffer-create "*Org Agenda*"))
+        (org-agenda-start-day nil)
+        (org-agenda-span 1))
+    (display-buffer buf '(display-buffer-pop-up-window . ((dedicated . t) (window-width . 80))))
+    (org-agenda nil "c")))
+
+(map! :n "SPC w a" #'org-agenda-popup)
+#+end_src
+** org-super-agenda-mode
+~org-super-agenda-mode~ gives a much prettier, organized agenda
+
+#+begin_src elisp
+(org-super-agenda-mode)
+(setq org-agenda-custom-commands
+      '(("c" "Super agenda"
+         ((agenda "" ((org-agenda-overriding-header "")
+                      (org-super-agenda-groups
+                       '((:log t)
+                         (:name "Today"
+                          :time-grid t
+                          :date today)
+                         ))))
+          (alltodo "" ((org-agenda-overriding-header "")
+                       (org-super-agenda-groups
+                        `((:log t)
+                          (:name "Important"
+                           :priority "A"
+                           :face (:weight ultra-bold :background "blue")
+                           :order 1)
+                         (:name "Next"
+                                :todo "NEXT"
+                                :order 0)
+                          (:name "Daphne"
+                           :tag "daphne")
+                          (:name "Chores"
+                           :file-path ,(expand-file-name +org-chores-file) ; back-quoted list allows evaluation with `,`
+                           :face (:slant italic)
+                           :order 2)
+                          (:name "Can wait"
+                           :priority "C")
+                          (:name "If time"
+                           :priority "B")))))))))
+#+end_src
+** org roam
+*** Directory
+#+begin_src elisp
+(setq org-roam-directory "~/org-roam")
+#+end_src
+
+*** Capture templates
+#+begin_src elisp
+(setq org-roam-dailies-capture-templates
+      '(("d" "default" entry "* %<%I:%M %p>: %?"
+         :if-new (file+head "%<%Y-%m-%d>.org" "#+title: %<%Y-%m-%d>\n")
+         :unnarrowed t
+         :empty-lines-before 1)))
+
+(setq org-roam-capture-templates '(("c" "default" plain "%?"
+                                    :target (file+head "%<%Y%m%d%H%M%S>-${slug}.org"
+                                                       "#+title: ${title}\n")
+                                    :unnarrowed t)
+                                   ("n" "node" entry "* %?"
+                                    :if-new (file+head "%<%Y%m%d%H%M%S>-${slug}.org"
+                                                       "#+title: ${title}\n")
+                                    :empty-lines-before 1)))
+#+end_src
+** Capture templates
+#+begin_src elisp
+(after! org
+  (setq +org-capture-agenda-file "~/org/agenda.org")
+  (setq org-capture-templates (append '(
+                                        ("a" "Agenda")
+                                        ("ad" "Deadline" entry
+                                         (file+olp+datetree +org-capture-agenda-file)
+                                         "* %?\nDEADLINE: %^{at}t")
+                                        ("t" "Todos")
+                                        ("tt" "project todo" entry
+                                         (file "~/org/projects.org")
+                                         "* TODO %?\n%i")
+                                        ("tn" "today" entry
+                                         (file+headline "~/org/todo.org" "Todos")
+                                         "* TODO %?\n%t")
+                                        ("td" "deadline" entry
+                                         (file+headline "~/org/todo.org" "Todos")
+                                         "* TODO %?\nDEADLINE: %^{at}t")
+                                        ("ts" "scheduled" entry
+                                         (file+headline "~/org/todo.org" "Todos")
+                                         "* TODO %?\nSCHEDULED: %^{at}t")
+                                        ("c" "chore" entry
+                                         (file +org-chores-file)
+                                         "* TODO %?\nDEADLINE: %t")
+                                        ) org-capture-templates))
+  )
+#+end_src
+* Language-specific
+** Go
+#+begin_src elisp
+(setq lsp-go-use-gofumpt t)
+(eval-after-load 'flycheck
+  '(add-hook 'flycheck-mode-hook #'flycheck-golangci-lint-setup))
+
+#+end_src
+
+*** hooks
+#+begin_src elisp
+(add-hook! 'go-mode-hook
+  (which-function-mode 1)
+  (add-hook! 'before-save-hook #'lsp-format-buffer t t)
+  (add-hook! 'before-save-hook #'lsp-organize-imports t t))
+(add-hook! 'go-ts-mode-hook
+  (lsp))
+#+end_src
+** TSX
+
+#+begin_src elisp
+(add-hook! 'tsx-ts-mode
+  (lsp)
+  (setq-local tab-width 4))
+#+end_src
+
+Format on save
+#+begin_src elisp
+(add-hook! 'tsx-ts-mode
+  (add-hook! 'before-save-hook #'+format/buffer))
+#+end_src
+
+*** Prettier
+#+begin_src elisp
+(add-hook! 'tsx-ts-mode 'prettier-js-mode)
+(setq prettier-js-args '(
+                         "--trailing-comma" "es5"
+                         "--bracket-spacing" "true"
+                         "--single-quote" "true"
+                         ))
+#+end_src
+
+* K8s helm
+
+Create an LSP for k8s helm so that I get nice syntax highlighting and definitions
+#+begin_src elisp
+(define-derived-mode k8s-helm-mode yaml-mode "Helm"
+  "A mode for editing helm charts.
+  \\{k8s-helm-mode-map}")
+
+(after! lsp-mode
+  (add-to-list 'lsp-language-id-configuration '(k8s-helm-mode . "yaml"))
+
+  (lsp-register-client (make-lsp-client
+                        :new-connection (lsp-stdio-connection '("helm_ls" "serve"))
+                        :activation-fn (lsp-activate-on "yaml")
+                        :server-id 'yaml))
+  )
+
+(add-hook! 'k8s-helm-mode
+  (lsp))
+#+end_src
+* Treesitter
+Treesitter is helpful for syntax highlighting and supposedly has faster node navigation
+#+begin_src elisp
+(setq treesit-font-lock-level 4)
+
+(setq treesit-language-source-alist
+      '((tsx        "https://github.com/tree-sitter/tree-sitter-typescript"
+         "v0.20.3"
+         "tsx/src")
+        (typescript "https://github.com/tree-sitter/tree-sitter-typescript"
+                    "v0.20.3"
+                    "typescript/src")
+        (rust "https://github.com/tree-sitter/tree-sitter-rust")
+        (go "https://github.com/tree-sitter/tree-sitter-go" "v0.19.1")))
+
+#+end_src
+* Hacks
+** Remove file watches
+#+begin_src elisp
+(defun file-notify-rm-all-watches ()
+  "Remove all existing file notification watches from Emacs."
+  (interactive)
+  (maphash
+   (lambda (key _value)
+     (file-notify-rm-watch key))
+   file-notify-descriptors))
+#+end_src
+
+* Treemacs theme
+#+begin_src elisp
+(setq doom-themes-treemacs-theme "doom-colors")
+#+end_src

@@ -1,0 +1,5 @@
+# -*- mode: snippet -*-
+# name: current time only
+# key: now
+# --
+`(car (seq-drop (split-string (current-time-string)) 3))`
