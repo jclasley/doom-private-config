@@ -54,3 +54,8 @@
 (package! dracula-theme)
 (package! popper)
 (package! prettier-js)
+(package! origami)
+(package! sticky-scroll-mode
+  ;; :recipe (:local-repo "~/emacs-pkgs/sticky-mode"))
+  :recipe (:host github :repo "/jclasley/sticky-scroll-mode"))
+(package! templ-ts-mode)

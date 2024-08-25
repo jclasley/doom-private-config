@@ -45,3 +45,7 @@
 ;; load the rest of it from an organized org file
 (org-babel-load-file "~/.doom.d/extra_config.org")
 (load "~/.doom.d/extra_config.el")
+
+(remove-hook 'doom-first-input-hook #'evil-snipe-mode)
+(map! :after evil
+      :n "s" #'avy-goto-char-2)

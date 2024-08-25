@@ -1,0 +1,5 @@
+# key: ctxt
+# name: ctx timeout
+# --
+${1:ctx}, cancel := context.WithTimeout(${2:ctx}, $3)
+defer cancel()
